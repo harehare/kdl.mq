@@ -1,4 +1,4 @@
-# kdl.mq
+<h1 align="center">kdl.mq</h1>
 
 A [KDL](https://kdl.dev/) parser implemented as an [mq](https://github.com/harehare/mq) module.
 
