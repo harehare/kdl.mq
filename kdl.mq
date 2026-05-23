@@ -1,0 +1,489 @@
+# KDL Implementation in mq
+# https://kdl.dev/
+
+def _kdl_hex_digit(c):
+  let cp = first(explode(c))
+  | if (cp >= 48 && cp <= 57): cp - 48
+    elif (cp >= 65 && cp <= 70): cp - 55
+    elif (cp >= 97 && cp <= 102): cp - 87
+    else: error("kdl: invalid hex digit: " + c)
+end
+
+def _kdl_hex_to_int(hex):
+  fold(to_array(downcase(hex)), 0, fn(acc, c): acc * 16 + _kdl_hex_digit(c);)
+end
+
+def _kdl_unescape(s):
+  var result = ""
+  | var i = 0
+  | let n = len(s)
+  | let _ = while (i < n):
+      if (s[i] != "\\"):
+        do result = result + s[i] | i += 1 | result end
+      elif (i + 1 >= n):
+        error("kdl: unexpected end of escape sequence")
+      elif (s[i + 1] == "n"):  do result = result + "\n" | i += 2 | result end
+      elif (s[i + 1] == "r"):  do result = result + "\r" | i += 2 | result end
+      elif (s[i + 1] == "t"):  do result = result + "\t" | i += 2 | result end
+      elif (s[i + 1] == "b"):  do result = result + implode([8])  | i += 2 | result end
+      elif (s[i + 1] == "f"):  do result = result + implode([12]) | i += 2 | result end
+      elif (s[i + 1] == "\\"): do result = result + "\\" | i += 2 | result end
+      elif (s[i + 1] == "\""): do result = result + "\"" | i += 2 | result end
+      elif (s[i + 1] == "/"):  do result = result + "/"  | i += 2 | result end
+      elif (s[i + 1] == "u" && i + 2 < n && s[i + 2] == "{"):
+        do
+          let start = i + 3
+          | var ep = start
+          | let _ = while (ep < n && s[ep] != "}"): ep += 1 end
+          | result = result + implode([_kdl_hex_to_int(slice(s, start, ep))])
+          | i = ep + 1
+          | result
+        end
+      else:
+        do result = result + s[i + 1] | i += 2 | result end
+    end
+  | result
+end
+
+# Returns true if c is valid inside a bare KDL identifier.
+# Excluded: whitespace, {, }, (, ), [, ], ;, ", #, \, =, ,, /, <, >
+def _kdl_is_id_char(c):
+  let cp = first(explode(c))
+  | not(cp == 32 || cp == 9 || cp == 10 || cp == 13 ||
+        c == "{" || c == "}" || c == "(" || c == ")" ||
+        c == "[" || c == "]" || c == ";" || c == "\"" ||
+        c == "#" || c == "\\" || c == "=" || c == "," ||
+        c == "/" || c == "<" || c == ">")
+end
+
+def _kdl_lex(s):
+  var pos = 0
+  | var tokens = []
+  | let n = len(s)
+  | let _ = while (pos < n):
+      let c = s[pos]
+      | if (c == " " || c == "\t" || c == "\r"):
+          do pos += 1 | tokens end
+
+        # Line continuation
+        elif (c == "\\" && pos + 1 < n && s[pos + 1] == "\n"):
+          do pos += 2 | tokens end
+        elif (c == "\\" && pos + 1 < n && s[pos + 1] == "\r"):
+          do pos += if (pos + 2 < n && s[pos + 2] == "\n"): 3 else: 2 | tokens end
+
+        # Newline (node terminator)
+        elif (c == "\n"):
+          do tokens += [{"t": "nl"}] | pos += 1 | tokens end
+
+        # Semicolon (node terminator)
+        elif (c == ";"):
+          do tokens += [{"t": "semi"}] | pos += 1 | tokens end
+
+        # Block comment /* ... */
+        elif (c == "/" && pos + 1 < n && s[pos + 1] == "*"):
+          do
+            pos += 2
+            | let _ = while (pos + 1 < n && not(s[pos] == "*" && s[pos + 1] == "/")):
+                pos += 1
+              end
+            | pos += 2
+            | tokens
+          end
+
+        # Slashdash /-  (comments out next node, value, prop, or children block)
+        elif (c == "/" && pos + 1 < n && s[pos + 1] == "-"):
+          do tokens += [{"t": "sd"}] | pos += 2 | tokens end
+
+        # Line comment //
+        elif (c == "/" && pos + 1 < n && s[pos + 1] == "/"):
+          do
+            pos += 2
+            | let _ = while (pos < n && s[pos] != "\n"): pos += 1 end
+            | tokens
+          end
+
+        elif (c == "{"):  do tokens += [{"t": "lbrace"}] | pos += 1 | tokens end
+        elif (c == "}"):  do tokens += [{"t": "rbrace"}] | pos += 1 | tokens end
+        elif (c == "("):  do tokens += [{"t": "lparen"}] | pos += 1 | tokens end
+        elif (c == ")"):  do tokens += [{"t": "rparen"}] | pos += 1 | tokens end
+        elif (c == "="):  do tokens += [{"t": "eq"}]     | pos += 1 | tokens end
+
+        # r"..." and r#"..."# raw strings (look-ahead to distinguish from identifiers)
+        elif (c == "r"):
+          do
+            var lah = pos + 1
+            | var nhashes = 0
+            | let _ = while (lah < n && s[lah] == "#"):
+                do nhashes += 1 | lah += 1 | nhashes end
+              end
+            | if (lah < n && s[lah] == "\""):
+                do
+                  pos = lah + 1
+                  | let closing = "\"" + repeat("#", nhashes)
+                  | let cl = len(closing)
+                  | var raw = ""
+                  | var rdone = false
+                  | let _ = while (pos < n && !rdone):
+                      if (slice(s, pos, pos + cl) == closing):
+                        do rdone = true | raw end
+                      else:
+                        do raw = raw + s[pos] | pos += 1 | raw end
+                    end
+                  | pos += cl
+                  | tokens += [{"t": "str", "v": raw}]
+                  | tokens
+                end
+              else:
+                # Not a raw string — parse as bare identifier starting with 'r'
+                do
+                  var id_buf = ""
+                  | let _ = while (pos < n && _kdl_is_id_char(s[pos])):
+                      do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
+                    end
+                  | tokens += [{"t": "id", "v": id_buf}]
+                  | tokens
+                end
+          end
+
+        # Double-quoted string
+        elif (c == "\""):
+          do
+            pos += 1
+            | var sbuf = ""
+            | var sdone = false
+            | let _ = while (pos < n && !sdone):
+                if (s[pos] == "\""):
+                  do sdone = true | sbuf end
+                elif (s[pos] == "\\"):
+                  do
+                    let nc = if (pos + 1 < n): s[pos + 1] else: ""
+                    | sbuf = sbuf + "\\" + nc
+                    | pos += if (pos + 1 < n): 2 else: 1
+                    | sbuf
+                  end
+                else:
+                  do sbuf = sbuf + s[pos] | pos += 1 | sbuf end
+              end
+            | pos += 1
+            | tokens += [{"t": "str", "v": _kdl_unescape(sbuf)}]
+            | tokens
+          end
+
+        # Hexadecimal numbers: 0x / 0X
+        elif (is_regex_match(slice(s, pos, n), "^[+-]?0[xX][0-9a-fA-F][0-9a-fA-F_]*")):
+          do
+            let m = first(regex_match(slice(s, pos, n), "^[+-]?0[xX][0-9a-fA-F][0-9a-fA-F_]*"))
+            | let neg = starts_with(m, "-")
+            | let has_sign = starts_with(m, "-") || starts_with(m, "+")
+            | let hex = replace(if (has_sign): slice(m, 3, len(m)) else: slice(m, 2, len(m)), "_", "")
+            | let val = if (neg): 0 - _kdl_hex_to_int(hex) else: _kdl_hex_to_int(hex)
+            | tokens += [{"t": "num", "v": val}]
+            | pos += len(m)
+            | tokens
+          end
+
+        # Octal numbers: 0o / 0O
+        elif (is_regex_match(slice(s, pos, n), "^[+-]?0[oO][0-7][0-7_]*")):
+          do
+            let m = first(regex_match(slice(s, pos, n), "^[+-]?0[oO][0-7][0-7_]*"))
+            | let neg = starts_with(m, "-")
+            | let has_sign = starts_with(m, "-") || starts_with(m, "+")
+            | let oct = replace(if (has_sign): slice(m, 3, len(m)) else: slice(m, 2, len(m)), "_", "")
+            | let val = fold(to_array(oct), 0, fn(acc, ch): acc * 8 + (first(explode(ch)) - 48);)
+            | tokens += [{"t": "num", "v": if (neg): 0 - val else: val}]
+            | pos += len(m)
+            | tokens
+          end
+
+        # Binary numbers: 0b / 0B
+        elif (is_regex_match(slice(s, pos, n), "^[+-]?0[bB][01][01_]*")):
+          do
+            let m = first(regex_match(slice(s, pos, n), "^[+-]?0[bB][01][01_]*"))
+            | let neg = starts_with(m, "-")
+            | let has_sign = starts_with(m, "-") || starts_with(m, "+")
+            | let bin = replace(if (has_sign): slice(m, 3, len(m)) else: slice(m, 2, len(m)), "_", "")
+            | let val = fold(to_array(bin), 0, fn(acc, ch): acc * 2 + (first(explode(ch)) - 48);)
+            | tokens += [{"t": "num", "v": if (neg): 0 - val else: val}]
+            | pos += len(m)
+            | tokens
+          end
+
+        # Decimal numbers (integers and floats, with optional underscore separators)
+        elif (is_regex_match(slice(s, pos, n), "^[+-]?[0-9][0-9_]*(?:\\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9][0-9_]*)?")):
+          do
+            let m = first(regex_match(slice(s, pos, n), "^[+-]?[0-9][0-9_]*(?:\\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9][0-9_]*)?"))
+            | tokens += [{"t": "num", "v": to_number(replace(m, "_", ""))}]
+            | pos += len(m)
+            | tokens
+          end
+
+        # Bare identifiers (true / false / null are recognized as keywords)
+        elif (_kdl_is_id_char(c)):
+          do
+            var id_buf = ""
+            | let _ = while (pos < n && _kdl_is_id_char(s[pos])):
+                do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
+              end
+            | let tok = if (id_buf == "true"):  {"t": "bool", "v": true}
+                        elif (id_buf == "false"): {"t": "bool", "v": false}
+                        elif (id_buf == "null"):  {"t": "null"}
+                        else:                     {"t": "id", "v": id_buf}
+            | tokens += [tok]
+            | tokens
+          end
+
+        else:
+          error("kdl: unexpected character: " + c)
+    end
+  | tokens
+end
+
+def _kdl_peek(tokens, pos):
+  if (pos >= len(tokens)): None
+  else: tokens[pos]
+end
+
+def _kdl_tt(tok):
+  if (is_none(tok)): "eof"
+  else: tok["t"]
+end
+
+# Parses an optional type annotation (type) before a node name or value.
+# Returns [new_pos, type_string_or_None].
+def _kdl_parse_type_ann(tokens, pos):
+  if (_kdl_tt(_kdl_peek(tokens, pos)) != "lparen"):
+    [pos, None]
+  else:
+    do
+      let tok1 = _kdl_peek(tokens, pos + 1)
+      | let tt1 = _kdl_tt(tok1)
+      | let type_str = if (tt1 == "id" || tt1 == "str"): tok1["v"]
+                       elif (tt1 == "bool"):              if (tok1["v"]): "true" else: "false"
+                       elif (tt1 == "null"):              "null"
+                       else: error("kdl: expected type name in annotation, got: " + tt1)
+      | let pos2 = pos + 2
+      | if (_kdl_tt(_kdl_peek(tokens, pos2)) != "rparen"):
+          error("kdl: expected ')' to close type annotation")
+      | [pos2 + 1, type_str]
+    end
+end
+
+# Parses a bare value token (string, number, boolean, null).
+# Returns [new_pos, value].
+def _kdl_parse_raw_value(tokens, pos):
+  let tok = _kdl_peek(tokens, pos)
+  | let tt = _kdl_tt(tok)
+  | if (tt == "str"):    [pos + 1, tok["v"]]
+    elif (tt == "num"):  [pos + 1, tok["v"]]
+    elif (tt == "bool"): [pos + 1, tok["v"]]
+    elif (tt == "null"): [pos + 1, None]
+    elif (tt == "eof"):  error("kdl: unexpected end of input in value")
+    else:                error("kdl: expected value, got: " + tt)
+end
+
+# Parses a value with an optional preceding type annotation.
+# Returns [new_pos, value].  The type annotation is consumed but not returned.
+def _kdl_parse_value(tokens, pos):
+  let r = _kdl_parse_type_ann(tokens, pos)
+  | let r2 = _kdl_parse_raw_value(tokens, r[0])
+  | [r2[0], r2[1]]
+end
+
+# Returns true when the token at pos is an identifier/string followed by '='.
+def _kdl_is_prop(tokens, pos):
+  let tt = _kdl_tt(_kdl_peek(tokens, pos))
+  | if (tt != "id" && tt != "str"): false
+    else: _kdl_tt(_kdl_peek(tokens, pos + 1)) == "eq"
+end
+
+# Parses a children block { ... }.  Returns [new_pos, children_array].
+def _kdl_parse_children(tokens, pos):
+  if (_kdl_tt(_kdl_peek(tokens, pos)) != "lbrace"):
+    error("kdl: expected '{' to open children block")
+  | var cur = pos + 1
+  | var kids = []
+  | var done = false
+  | let _ = while (!done):
+      let tt = _kdl_tt(_kdl_peek(tokens, cur))
+      | if (tt == "nl" || tt == "semi"):
+          do cur += 1 | kids end
+        elif (tt == "rbrace" || tt == "eof"):
+          do done = true | kids end
+        else:
+          do
+            let r = _kdl_parse_node(tokens, cur)
+            | cur = r[0]
+            | if (not(is_none(r[1]))):
+                kids += [r[1]]
+            | kids
+          end
+    end
+  | if (_kdl_tt(_kdl_peek(tokens, cur)) != "rbrace"):
+      error("kdl: expected '}' to close children block")
+  | [cur + 1, kids]
+end
+
+# Parses a single node.
+# Returns [new_pos, node_dict] where node_dict is None when the node is slashdashed.
+# Each node: {"name": ..., "type": ..., "args": [...], "props": {...}, "children": [...]}
+def _kdl_parse_node(tokens, pos):
+  var cur = pos
+
+  # Optional slashdash before the node — marks the whole node as commented out
+  | var slashdash = false
+  | if (_kdl_tt(_kdl_peek(tokens, cur)) == "sd"):
+      do slashdash = true | cur += 1 | slashdash end
+
+  # Optional type annotation on the node itself
+  | let r_type = _kdl_parse_type_ann(tokens, cur)
+  | cur = r_type[0]
+  | let node_type = r_type[1]
+
+  # Node name (bare identifier, quoted string, or a keyword used as name)
+  | let name_tok = _kdl_peek(tokens, cur)
+  | let name_tt = _kdl_tt(name_tok)
+  | let node_name = if (name_tt == "id" || name_tt == "str"): name_tok["v"]
+                    elif (name_tt == "bool"): if (name_tok["v"]): "true" else: "false"
+                    elif (name_tt == "null"): "null"
+                    else: error("kdl: expected node name, got: " + name_tt)
+  | cur += 1
+
+  # Parse arguments, properties, and optional children on this line
+  | var args = []
+  | var props = dict()
+  | var children = []
+  | var done = false
+  | let _ = while (!done):
+      let tt = _kdl_tt(_kdl_peek(tokens, cur))
+      | if (tt == "nl" || tt == "semi" || tt == "eof" || tt == "rbrace"):
+          do done = true | args end
+
+        # Slashdash: consume and discard the next value, property, or children block
+        elif (tt == "sd"):
+          do
+            cur += 1
+            | let ntt = _kdl_tt(_kdl_peek(tokens, cur))
+            | if (ntt == "lbrace"):
+                do
+                  let r = _kdl_parse_children(tokens, cur)
+                  | cur = r[0]
+                  | done = true
+                  | args
+                end
+              elif (_kdl_is_prop(tokens, cur)):
+                do
+                  cur += 2
+                  | let rv = _kdl_parse_value(tokens, cur)
+                  | cur = rv[0]
+                  | args
+                end
+              else:
+                do
+                  let rv = _kdl_parse_value(tokens, cur)
+                  | cur = rv[0]
+                  | args
+                end
+          end
+
+        # Children block
+        elif (tt == "lbrace"):
+          do
+            let r = _kdl_parse_children(tokens, cur)
+            | cur = r[0]
+            | children = r[1]
+            | done = true
+            | args
+          end
+
+        # Property: identifier = value
+        elif (_kdl_is_prop(tokens, cur)):
+          do
+            let key = _kdl_peek(tokens, cur)["v"]
+            | cur += 2
+            | let rv = _kdl_parse_value(tokens, cur)
+            | cur = rv[0]
+            | props = set(props, key, rv[1])
+            | props
+          end
+
+        # Argument value (optionally preceded by a type annotation)
+        elif (tt == "lparen" || tt == "str" || tt == "num" || tt == "bool" || tt == "null"):
+          do
+            let rv = _kdl_parse_value(tokens, cur)
+            | cur = rv[0]
+            | args += [rv[1]]
+            | args
+          end
+
+        else:
+          error("kdl: unexpected token in node body: " + tt)
+    end
+
+  # Consume the line terminator (nl or semi), but leave rbrace/eof for callers
+  | let tterm = _kdl_tt(_kdl_peek(tokens, cur))
+  | if (tterm == "nl" || tterm == "semi"):
+      cur += 1
+
+  | let node = if (slashdash): None
+               elif (is_none(node_type)):
+                 {"name": node_name, "args": args, "props": props, "children": children}
+               else:
+                 {"name": node_name, "type": node_type, "args": args, "props": props, "children": children}
+  | [cur, node]
+end
+
+# Converts an array of KDL nodes into a plain {key: value} dict.
+# Conversion rules per node:
+#   - has children           → recursively apply kdl_to_object to children
+#   - one arg, no props      → arg value directly
+#   - multiple args, no props → array of args
+#   - props only             → props dict
+#   - args + props           → props dict with args stored under "args"
+#   - nothing                → None
+# When multiple nodes share the same name, later ones overwrite earlier ones.
+def kdl_to_object(node_list):
+  fold(node_list, dict(), fn(acc, node):
+    let has_children = not(is_empty(node["children"]))
+    | let has_props   = not(is_empty(keys(node["props"])))
+    | let nargs       = len(node["args"])
+    | let val = if (has_children):
+                  kdl_to_object(node["children"])
+                elif (nargs == 1 && !has_props):
+                  node["args"][0]
+                elif (nargs > 1 && !has_props):
+                  node["args"]
+                elif (has_props && nargs == 0):
+                  node["props"]
+                elif (has_props && nargs > 0):
+                  set(node["props"], "args", node["args"])
+                else:
+                  None
+    | set(acc, node["name"], val)
+  ;)
+end
+
+def _kdl_parse_doc(input):
+  let tokens = _kdl_lex(to_string(input))
+  | var cur = 0
+  | var doc = []
+  | let n = len(tokens)
+  | let _ = while (cur < n):
+      let tt = _kdl_tt(_kdl_peek(tokens, cur))
+      | if (tt == "nl" || tt == "semi"):
+          do cur += 1 | doc end
+        else:
+          do
+            let r = _kdl_parse_node(tokens, cur)
+            | cur = r[0]
+            | if (not(is_none(r[1]))):
+                doc += [r[1]]
+            | doc
+          end
+    end
+  | doc
+end
+
+# Parses a KDL string and returns a {key: value} dict.
+def kdl_parse(input):
+  kdl_to_object(_kdl_parse_doc(input))
+end
