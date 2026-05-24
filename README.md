@@ -90,13 +90,13 @@ mq -L . -I raw 'import "kdl" | kdl::kdl_parse(.)' config.kdl
 ```
 
 ```sh
-mq -L . -I raw 'import "kdl" | kdl::kdl_parse(.) | get(., "server") | get(., "host")' config.kdl
+mq -L . -I raw 'import "kdl" | kdl::kdl_parse() | get("server") | get("host")' config.kdl
 # => "localhost"
 
-mq -L . -I raw 'import "kdl" | kdl::kdl_parse(.) | get(., "server") | get(., "limits") | get(., "max-connections")' config.kdl
+mq -L . -I raw 'import "kdl" | kdl::kdl_parse() | get("server") | get("limits") | get("max-connections")' config.kdl
 # => 255
 
-mq -L . -I raw 'import "kdl" | kdl::kdl_parse(.) | get(., "server") | get(., "tags")' config.kdl
+mq -L . -I raw 'import "kdl" | kdl::kdl_parse() | get("server") | get("tags")' config.kdl
 # => ["web", "api"]
 ```
 
