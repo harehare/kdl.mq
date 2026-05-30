@@ -22,14 +22,14 @@ def _kdl_unescape(s):
         do result = result + s[i] | i += 1 | result end
       elif (i + 1 >= n):
         error("kdl: unexpected end of escape sequence")
-      elif (s[i + 1] == "n"):  do result = result + "\n" | i += 2 | result end
-      elif (s[i + 1] == "r"):  do result = result + "\r" | i += 2 | result end
-      elif (s[i + 1] == "t"):  do result = result + "\t" | i += 2 | result end
-      elif (s[i + 1] == "b"):  do result = result + implode([8])  | i += 2 | result end
-      elif (s[i + 1] == "f"):  do result = result + implode([12]) | i += 2 | result end
+      elif (s[i + 1] == "n"): do result = result + "\n" | i += 2 | result end
+      elif (s[i + 1] == "r"): do result = result + "\r" | i += 2 | result end
+      elif (s[i + 1] == "t"): do result = result + "\t" | i += 2 | result end
+      elif (s[i + 1] == "b"): do result = result + implode([8]) | i += 2 | result end
+      elif (s[i + 1] == "f"): do result = result + implode([12]) | i += 2 | result end
       elif (s[i + 1] == "\\"): do result = result + "\\" | i += 2 | result end
       elif (s[i + 1] == "\""): do result = result + "\"" | i += 2 | result end
-      elif (s[i + 1] == "/"):  do result = result + "/"  | i += 2 | result end
+      elif (s[i + 1] == "/"): do result = result + "/" | i += 2 | result end
       elif (s[i + 1] == "u" && i + 2 < n && s[i + 2] == "{"):
         do
           let start = i + 3
@@ -50,10 +50,10 @@ end
 def _kdl_is_id_char(c):
   let cp = first(explode(c))
   | not(cp == 32 || cp == 9 || cp == 10 || cp == 13 ||
-        c == "{" || c == "}" || c == "(" || c == ")" ||
-        c == "[" || c == "]" || c == ";" || c == "\"" ||
-        c == "#" || c == "\\" || c == "=" || c == "," ||
-        c == "/" || c == "<" || c == ">")
+    c == "{" || c == "}" || c == "(" || c == ")" ||
+    c == "[" || c == "]" || c == ";" || c == "\"" ||
+    c == "#" || c == "\\" || c == "=" || c == "," ||
+    c == "/" || c == "<" || c == ">")
 end
 
 def _kdl_lex(s):
@@ -84,8 +84,8 @@ def _kdl_lex(s):
           do
             pos += 2
             | let _ = while (pos + 1 < n && not(s[pos] == "*" && s[pos + 1] == "/")):
-                pos += 1
-              end
+                          pos += 1
+                        end
             | pos += 2
             | tokens
           end
@@ -102,11 +102,11 @@ def _kdl_lex(s):
             | tokens
           end
 
-        elif (c == "{"):  do tokens += [{"t": "lbrace"}] | pos += 1 | tokens end
-        elif (c == "}"):  do tokens += [{"t": "rbrace"}] | pos += 1 | tokens end
-        elif (c == "("):  do tokens += [{"t": "lparen"}] | pos += 1 | tokens end
-        elif (c == ")"):  do tokens += [{"t": "rparen"}] | pos += 1 | tokens end
-        elif (c == "="):  do tokens += [{"t": "eq"}]     | pos += 1 | tokens end
+        elif (c == "{"): do tokens += [{"t": "lbrace"}] | pos += 1 | tokens end
+        elif (c == "}"): do tokens += [{"t": "rbrace"}] | pos += 1 | tokens end
+        elif (c == "("): do tokens += [{"t": "lparen"}] | pos += 1 | tokens end
+        elif (c == ")"): do tokens += [{"t": "rparen"}] | pos += 1 | tokens end
+        elif (c == "="): do tokens += [{"t": "eq"}] | pos += 1 | tokens end
 
         # r"..." and r#"..."# raw strings (look-ahead to distinguish from identifiers)
         elif (c == "r"):
@@ -114,8 +114,8 @@ def _kdl_lex(s):
             var lah = pos + 1
             | var nhashes = 0
             | let _ = while (lah < n && s[lah] == "#"):
-                do nhashes += 1 | lah += 1 | nhashes end
-              end
+do nhashes += 1 | lah += 1 | nhashes end
+                        end
             | if (lah < n && s[lah] == "\""):
                 do
                   pos = lah + 1
@@ -124,11 +124,11 @@ def _kdl_lex(s):
                   | var raw = ""
                   | var rdone = false
                   | let _ = while (pos < n && !rdone):
-                      if (slice(s, pos, pos + cl) == closing):
-                        do rdone = true | raw end
-                      else:
-                        do raw = raw + s[pos] | pos += 1 | raw end
-                    end
+                                      if (slice(s, pos, pos + cl) == closing):
+                                        do rdone = true | raw end
+                                      else:
+                                        do raw = raw + s[pos] | pos += 1 | raw end
+                                    end
                   | pos += cl
                   | tokens += [{"t": "str", "v": raw}]
                   | tokens
@@ -138,8 +138,8 @@ def _kdl_lex(s):
                 do
                   var id_buf = ""
                   | let _ = while (pos < n && _kdl_is_id_char(s[pos])):
-                      do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
-                    end
+do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
+                                    end
                   | tokens += [{"t": "id", "v": id_buf}]
                   | tokens
                 end
@@ -152,18 +152,18 @@ def _kdl_lex(s):
             | var sbuf = ""
             | var sdone = false
             | let _ = while (pos < n && !sdone):
-                if (s[pos] == "\""):
-                  do sdone = true | sbuf end
-                elif (s[pos] == "\\"):
-                  do
-                    let nc = if (pos + 1 < n): s[pos + 1] else: ""
-                    | sbuf = sbuf + "\\" + nc
-                    | pos += if (pos + 1 < n): 2 else: 1
-                    | sbuf
-                  end
-                else:
-                  do sbuf = sbuf + s[pos] | pos += 1 | sbuf end
-              end
+                          if (s[pos] == "\""):
+                            do sdone = true | sbuf end
+                          elif (s[pos] == "\\"):
+                            do
+                              let nc = if (pos + 1 < n): s[pos + 1] else: ""
+                              | sbuf = sbuf + "\\" + nc
+                              | pos += if (pos + 1 < n): 2 else: 1
+                              | sbuf
+                            end
+                          else:
+                            do sbuf = sbuf + s[pos] | pos += 1 | sbuf end
+                        end
             | pos += 1
             | tokens += [{"t": "str", "v": _kdl_unescape(sbuf)}]
             | tokens
@@ -222,12 +222,12 @@ def _kdl_lex(s):
           do
             var id_buf = ""
             | let _ = while (pos < n && _kdl_is_id_char(s[pos])):
-                do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
-              end
-            | let tok = if (id_buf == "true"):  {"t": "bool", "v": true}
+do id_buf = id_buf + s[pos] | pos += 1 | id_buf end
+                        end
+            | let tok = if (id_buf == "true"): {"t": "bool", "v": true}
                         elif (id_buf == "false"): {"t": "bool", "v": false}
-                        elif (id_buf == "null"):  {"t": "null"}
-                        else:                     {"t": "id", "v": id_buf}
+                        elif (id_buf == "null"): {"t": "null"}
+                        else: {"t": "id", "v": id_buf}
             | tokens += [tok]
             | tokens
           end
@@ -258,9 +258,9 @@ def _kdl_parse_type_ann(tokens, pos):
       let tok1 = _kdl_peek(tokens, pos + 1)
       | let tt1 = _kdl_tt(tok1)
       | let type_str = if (tt1 == "id" || tt1 == "str"): tok1["v"]
-                       elif (tt1 == "bool"):              if (tok1["v"]): "true" else: "false"
-                       elif (tt1 == "null"):              "null"
-                       else: error("kdl: expected type name in annotation, got: " + tt1)
+            elif (tt1 == "bool"): if (tok1["v"]): "true" else: "false"
+            elif (tt1 == "null"): "null"
+            else: error("kdl: expected type name in annotation, got: " + tt1)
       | let pos2 = pos + 2
       | if (_kdl_tt(_kdl_peek(tokens, pos2)) != "rparen"):
           error("kdl: expected ')' to close type annotation")
@@ -273,12 +273,12 @@ end
 def _kdl_parse_raw_value(tokens, pos):
   let tok = _kdl_peek(tokens, pos)
   | let tt = _kdl_tt(tok)
-  | if (tt == "str"):    [pos + 1, tok["v"]]
-    elif (tt == "num"):  [pos + 1, tok["v"]]
+  | if (tt == "str"): [pos + 1, tok["v"]]
+    elif (tt == "num"): [pos + 1, tok["v"]]
     elif (tt == "bool"): [pos + 1, tok["v"]]
     elif (tt == "null"): [pos + 1, None]
-    elif (tt == "eof"):  error("kdl: unexpected end of input in value")
-    else:                error("kdl: expected value, got: " + tt)
+    elif (tt == "eof"): error("kdl: unexpected end of input in value")
+    else: error("kdl: expected value, got: " + tt)
 end
 
 # Parses a value with an optional preceding type annotation.
@@ -343,9 +343,9 @@ def _kdl_parse_node(tokens, pos):
   | let name_tok = _kdl_peek(tokens, cur)
   | let name_tt = _kdl_tt(name_tok)
   | let node_name = if (name_tt == "id" || name_tt == "str"): name_tok["v"]
-                    elif (name_tt == "bool"): if (name_tok["v"]): "true" else: "false"
-                    elif (name_tt == "null"): "null"
-                    else: error("kdl: expected node name, got: " + name_tt)
+    elif (name_tt == "bool"): if (name_tok["v"]): "true" else: "false"
+    elif (name_tt == "null"): "null"
+    else: error("kdl: expected node name, got: " + name_tt)
   | cur += 1
 
   # Parse arguments, properties, and optional children on this line
@@ -425,41 +425,40 @@ def _kdl_parse_node(tokens, pos):
       cur += 1
 
   | let node = if (slashdash): None
-               elif (is_none(node_type)):
-                 {"name": node_name, "args": args, "props": props, "children": children}
-               else:
-                 {"name": node_name, "type": node_type, "args": args, "props": props, "children": children}
+    elif (is_none(node_type)):
+      {"name": node_name, "args": args, "props": props, "children": children}
+    else:
+      {"name": node_name, "type": node_type, "args": args, "props": props, "children": children}
   | [cur, node]
 end
 
 # Converts an array of KDL nodes into a plain {key: value} dict.
 # Conversion rules per node:
-#   - has children           → recursively apply kdl_to_object to children
-#   - one arg, no props      → arg value directly
-#   - multiple args, no props → array of args
-#   - props only             → props dict
-#   - args + props           → props dict with args stored under "args"
-#   - nothing                → None
+# - has children           → recursively apply kdl_to_object to children
+# - one arg, no props      → arg value directly
+# - multiple args, no props → array of args
+# - props only             → props dict
+# - args + props           → props dict with args stored under "args"
+# - nothing                → None
 # When multiple nodes share the same name, later ones overwrite earlier ones.
 def kdl_to_object(node_list):
   fold(node_list, dict(), fn(acc, node):
     let has_children = not(is_empty(node["children"]))
-    | let has_props   = not(is_empty(keys(node["props"])))
-    | let nargs       = len(node["args"])
+    | let has_props = not(is_empty(keys(node["props"])))
+    | let nargs = len(node["args"])
     | let val = if (has_children):
-                  kdl_to_object(node["children"])
-                elif (nargs == 1 && !has_props):
-                  node["args"][0]
-                elif (nargs > 1 && !has_props):
-                  node["args"]
-                elif (has_props && nargs == 0):
-                  node["props"]
-                elif (has_props && nargs > 0):
-                  set(node["props"], "args", node["args"])
-                else:
-                  None
-    | set(acc, node["name"], val)
-  ;)
+          kdl_to_object(node["children"])
+        elif (nargs == 1 && !has_props):
+          node["args"][0]
+        elif (nargs > 1 && !has_props):
+          node["args"]
+        elif (has_props && nargs == 0):
+          node["props"]
+        elif (has_props && nargs > 0):
+          set(node["props"], "args", node["args"])
+        else:
+          None
+    | set(acc, node["name"], val);)
 end
 
 def _kdl_parse_doc(input):
