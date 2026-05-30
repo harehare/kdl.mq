@@ -1,0 +1,354 @@
+include "test"
+| include "kdl"
+|
+
+# -- Basic Node Tests --
+
+def test_parse_simple_node():
+  let result = kdl_parse("node")
+  | assert_none(result["node"])
+end
+
+def test_parse_node_with_string_arg():
+  let result = kdl_parse("node \"hello\"")
+  | assert_eq(result["node"], "hello")
+end
+
+def test_parse_node_with_integer_arg():
+  let result = kdl_parse("node 42")
+  | assert_eq(result["node"], 42)
+end
+
+def test_parse_node_with_float_arg():
+  let result = kdl_parse("node 3.14")
+  | assert_eq(result["node"], 3.14)
+end
+
+def test_parse_node_with_true():
+  let result = kdl_parse("node true")
+  | assert_eq(result["node"], true)
+end
+
+def test_parse_node_with_false():
+  let result = kdl_parse("node false")
+  | assert_eq(result["node"], false)
+end
+
+def test_parse_node_with_null():
+  let result = kdl_parse("node null")
+  | assert_none(result["node"])
+end
+
+def test_parse_node_semicolon_terminator():
+  let result = kdl_parse("a 1; b 2")
+  | assert_eq(result["a"], 1)
+  | assert_eq(result["b"], 2)
+end
+
+# -- Multiple Nodes Tests --
+
+def test_parse_multiple_nodes():
+  let result = kdl_parse("name \"Alice\"\nage 30")
+  | assert_eq(result["name"], "Alice")
+  | assert_eq(result["age"], 30)
+end
+
+def test_parse_multiple_args():
+  let result = kdl_parse("node 1 2 3")
+  | assert_eq(result["node"], [1, 2, 3])
+end
+
+# -- Property Tests --
+
+def test_parse_property():
+  let result = kdl_parse("node key=\"value\"")
+  | assert_eq(result["node"]["key"], "value")
+end
+
+def test_parse_multiple_properties():
+  let result = kdl_parse("node a=1 b=2 c=true")
+  | assert_eq(result["node"]["a"], 1)
+  | assert_eq(result["node"]["b"], 2)
+  | assert_eq(result["node"]["c"], true)
+end
+
+def test_parse_args_and_props():
+  let result = kdl_parse("node 1 2 key=\"val\"")
+  | assert_eq(result["node"]["args"], [1, 2])
+  | assert_eq(result["node"]["key"], "val")
+end
+
+# -- Children Block Tests --
+
+def test_parse_children():
+  let result = kdl_parse("parent {\n  child 1\n}")
+  | assert_eq(result["parent"]["child"], 1)
+end
+
+def test_parse_nested_children():
+  let result = kdl_parse("a {\n  b {\n    c 42\n  }\n}")
+  | assert_eq(result["a"]["b"]["c"], 42)
+end
+
+def test_parse_multiple_children():
+  let result = kdl_parse("node {\n  x 1\n  y 2\n  z 3\n}")
+  | assert_eq(result["node"]["x"], 1)
+  | assert_eq(result["node"]["y"], 2)
+  | assert_eq(result["node"]["z"], 3)
+end
+
+# -- Number Format Tests --
+
+def test_parse_hex_number():
+  let result = kdl_parse("node 0xFF")
+  | assert_eq(result["node"], 255)
+end
+
+def test_parse_hex_lowercase():
+  let result = kdl_parse("node 0xff")
+  | assert_eq(result["node"], 255)
+end
+
+def test_parse_hex_negative():
+  let result = kdl_parse("node -0x10")
+  | assert_eq(result["node"], -16)
+end
+
+def test_parse_octal_number():
+  let result = kdl_parse("node 0o17")
+  | assert_eq(result["node"], 15)
+end
+
+def test_parse_binary_number():
+  let result = kdl_parse("node 0b1010")
+  | assert_eq(result["node"], 10)
+end
+
+def test_parse_number_with_underscores():
+  let result = kdl_parse("node 1_000_000")
+  | assert_eq(result["node"], 1000000)
+end
+
+def test_parse_float_with_exponent():
+  let result = kdl_parse("node 1e3")
+  | assert_eq(result["node"], 1000)
+end
+
+def test_parse_negative_number():
+  let result = kdl_parse("node -42")
+  | assert_eq(result["node"], -42)
+end
+
+def test_parse_positive_sign():
+  let result = kdl_parse("node +5")
+  | assert_eq(result["node"], 5)
+end
+
+# -- String Tests --
+
+def test_parse_double_quoted_string():
+  let result = kdl_parse("node \"hello world\"")
+  | assert_eq(result["node"], "hello world")
+end
+
+def test_parse_string_escape_n():
+  let result = kdl_parse("node \"line1\\nline2\"")
+  | assert_eq(result["node"], "line1\nline2")
+end
+
+def test_parse_string_escape_t():
+  let result = kdl_parse("node \"col1\\tcol2\"")
+  | assert_eq(result["node"], "col1\tcol2")
+end
+
+def test_parse_string_escape_backslash():
+  let result = kdl_parse("node \"a\\\\b\"")
+  | assert_eq(result["node"], "a\\b")
+end
+
+def test_parse_string_escape_quote():
+  let result = kdl_parse("node \"say \\\"hi\\\"\"")
+  | assert_eq(result["node"], "say \"hi\"")
+end
+
+def test_parse_string_unicode_escape():
+  let result = kdl_parse("node \"\\u{41}\"")
+  | assert_eq(result["node"], "A")
+end
+
+def test_parse_raw_string():
+  let result = kdl_parse("node r\"raw \\n string\"")
+  | assert_eq(result["node"], "raw \\n string")
+end
+
+def test_parse_raw_string_with_hashes():
+  let result = kdl_parse("node r#\"contains \"quotes\"\"#")
+  | assert_eq(result["node"], "contains \"quotes\"")
+end
+
+# -- Comment Tests --
+
+def test_parse_line_comment():
+  let result = kdl_parse("// comment\nnode 1")
+  | assert_eq(result["node"], 1)
+end
+
+def test_parse_block_comment():
+  let result = kdl_parse("/* block */ node 1")
+  | assert_eq(result["node"], 1)
+end
+
+def test_parse_inline_comment():
+  let result = kdl_parse("node 1 // trailing comment")
+  | assert_eq(result["node"], 1)
+end
+
+def test_parse_slashdash_node():
+  let result = kdl_parse("/-node 99\nother 1")
+  | assert_eq(result["other"], 1)
+  | assert(not(contains(keys(result), "node")))
+end
+
+def test_parse_slashdash_arg():
+  let result = kdl_parse("node /- 99 42")
+  | assert_eq(result["node"], 42)
+end
+
+def test_parse_slashdash_prop():
+  let result = kdl_parse("node /- skip=99 key=\"val\"")
+  | assert_eq(result["node"]["key"], "val")
+  | assert(not(contains(keys(result["node"]), "skip")))
+end
+
+def test_parse_slashdash_children():
+  let result = kdl_parse("node /- {\n  child 1\n}")
+  | assert_none(result["node"])
+end
+
+# -- Type Annotation Tests --
+
+def test_parse_type_annotation_on_value():
+  let result = kdl_parse("node (u8)42")
+  | assert_eq(result["node"], 42)
+end
+
+def test_parse_type_annotation_on_node():
+  let result = kdl_parse("(config)node key=\"val\"")
+  | assert_eq(result["node"]["key"], "val")
+end
+
+# -- Identifier Tests --
+
+def test_parse_bare_identifier_node():
+  let result = kdl_parse("my-node 1")
+  | assert_eq(result["my-node"], 1)
+end
+
+def test_parse_quoted_node_name():
+  let result = kdl_parse("\"node name\" 1")
+  | assert_eq(result["node name"], 1)
+end
+
+# -- Line Continuation Tests --
+
+def test_parse_line_continuation():
+  let result = kdl_parse("node \\\n  1 2 3")
+  | assert_eq(result["node"], [1, 2, 3])
+end
+
+# -- Helper Function Tests --
+
+def test_hex_to_int():
+  let result = _kdl_hex_to_int("ff")
+  | assert_eq(result, 255)
+
+  | let result2 = _kdl_hex_to_int("10")
+  | assert_eq(result2, 16)
+
+  | let result3 = _kdl_hex_to_int("0")
+  | assert_eq(result3, 0)
+end
+
+def test_unescape_plain():
+  let result = _kdl_unescape("hello")
+  | assert_eq(result, "hello")
+end
+
+def test_unescape_newline():
+  let result = _kdl_unescape("a\\nb")
+  | assert_eq(result, "a\nb")
+end
+
+def test_unescape_unicode():
+  let result = _kdl_unescape("\\u{0041}")
+  | assert_eq(result, "A")
+end
+
+def test_is_id_char_valid():
+  assert_eq(_kdl_is_id_char("a"), true)
+  | assert_eq(_kdl_is_id_char("-"), true)
+  | assert_eq(_kdl_is_id_char("_"), true)
+end
+
+def test_is_id_char_invalid():
+  assert_eq(_kdl_is_id_char(" "), false)
+  | assert_eq(_kdl_is_id_char("{"), false)
+  | assert_eq(_kdl_is_id_char("="), false)
+end
+
+# -- kdl_to_object Tests --
+
+def test_kdl_to_object_empty():
+  let result = kdl_to_object([])
+  | assert_eq(result, dict())
+end
+
+def test_kdl_to_object_single_arg():
+  let node = {"name": "key", "args": [42], "props": dict(), "children": []}
+  | let result = kdl_to_object([node])
+  | assert_eq(result["key"], 42)
+end
+
+def test_kdl_to_object_multi_args():
+  let node = {"name": "key", "args": [1, 2, 3], "props": dict(), "children": []}
+  | let result = kdl_to_object([node])
+  | assert_eq(result["key"], [1, 2, 3])
+end
+
+def test_kdl_to_object_no_args_no_children():
+  let node = {"name": "key", "args": [], "props": dict(), "children": []}
+  | let result = kdl_to_object([node])
+  | assert_none(result["key"])
+end
+
+def test_kdl_to_object_overwrites_duplicate_keys():
+  let n1 = {"name": "k", "args": [1], "props": dict(), "children": []}
+  | let n2 = {"name": "k", "args": [2], "props": dict(), "children": []}
+  | let result = kdl_to_object([n1, n2])
+  | assert_eq(result["k"], 2)
+end
+
+# -- Complex / Realistic Tests --
+
+def test_parse_realistic_config():
+  let input = "// application config\napp {\n  name \"myapp\"\n  version \"1.0.0\"\n  debug false\n  port 8080\n}"
+  | let result = kdl_parse(input)
+  | assert_eq(result["app"]["name"], "myapp")
+  | assert_eq(result["app"]["version"], "1.0.0")
+  | assert_eq(result["app"]["debug"], false)
+  | assert_eq(result["app"]["port"], 8080)
+end
+
+def test_parse_package_manifest():
+  let input = "package {\n  name \"my-lib\"\n  version \"0.1.0\"\n  author \"Alice\" email=\"alice@example.com\"\n}"
+  | let result = kdl_parse(input)
+  | assert_eq(result["package"]["name"], "my-lib")
+  | assert_eq(result["package"]["author"]["args"], ["Alice"])
+  | assert_eq(result["package"]["author"]["email"], "alice@example.com")
+end
+
+def test_parse_deeply_nested():
+  let input = "a {\n  b {\n    c {\n      d 99\n    }\n  }\n}"
+  | let result = kdl_parse(input)
+  | assert_eq(result["a"]["b"]["c"]["d"], 99)
+end
